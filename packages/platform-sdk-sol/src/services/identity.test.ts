@@ -85,7 +85,7 @@ describe("IdentityService", () => {
 	});
 
 	describe("#publicKey", () => {
-		it("should generate an output from a mnemonic", async () => {
+		it.only("should generate an output from a mnemonic", async () => {
 			const result: any = await subject.publicKey().fromMnemonic(identity.mnemonic);
 
 			expect(result).toBe(identity.publicKey);

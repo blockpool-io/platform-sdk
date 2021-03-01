@@ -1,5 +1,6 @@
 import { Coins, Contracts, Exceptions } from "@arkecosystem/platform-sdk";
 import { BIP39 } from "@arkecosystem/platform-sdk-crypto";
+import { PublicKey as PK } from "@solana/web3.js";
 
 import { derivePrivateKey, derivePublicKey } from "./helpers";
 
@@ -14,6 +15,11 @@ export class PublicKey implements Contracts.PublicKey {
 		if (!BIP39.validate(mnemonic)) {
 			throw new Exceptions.InvalidArguments(this.constructor.name, "fromMnemonic");
 		}
+
+		// @README: this is just here to trigger "TypeError: naclLowLevel.gf is not a function"
+		new PK(derivePublicKey(
+			derivePrivateKey(mnemonic, options?.bip44.account || 0, options?.bip44.addressIndex || 0, this.#slip44),
+		))
 
 		return derivePublicKey(
 			derivePrivateKey(mnemonic, options?.bip44.account || 0, options?.bip44.addressIndex || 0, this.#slip44),
