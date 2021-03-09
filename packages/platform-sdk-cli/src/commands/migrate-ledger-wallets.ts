@@ -105,7 +105,7 @@ export const migrateLedgerWallets = async (env: Environment, profile: Profile): 
 										senderPublicKey: oldPathKey,
 										signature,
 									},
-								}, { unsignedBytes: true, unsignedJson: false }),
+								}),
 						);
 
 						process.exit();
