@@ -71,7 +71,6 @@ export const migrateLedgerWallets = async (env: Environment, profile: Profile): 
 					.getExtendedPublicKey(`m/44'/${slip44}'/${accountIndex}'`)
 			).derive(`m/0/${accountIndex}`).publicKey.toString("hex");
 			const newPathAddress = await instance.identity().address().fromPublicKey(newPathKey)
-			const newPathBalance = (await instance.client().wallet(newPathAddress)).balance();
 
 			addressList.push({
 				oldPath,
@@ -79,7 +78,7 @@ export const migrateLedgerWallets = async (env: Environment, profile: Profile): 
 				oldPathBalance: oldPathBalance.toHuman(),
 				newPath,
 				newPathAddress: newPathAddress,
-				newPathBalance: newPathBalance.toHuman(),
+				newPathBalance: oldPathBalance.toHuman(), // @TODO: subtract fee
 			});
 		} catch (error) {
 			console.log(error.message);
