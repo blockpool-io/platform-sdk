@@ -56,17 +56,17 @@ export const migrateLedgerWallets = async (env: Environment, profile: Profile): 
 	const table = new Table({ head: ["Old Path", "Old Address", "Old Balance", "New Path", "New Address", "New Balance"] });
 
 	for (let accountIndex = 0; accountIndex < 50; accountIndex++) {
-		const compressedPublicKey = await instance
-			.ledger()
-			.getExtendedPublicKey(`m/44'/${slip44}'/${accountIndex}'`);
-
 		const oldPath = `44'/${slip44}'/${accountIndex}'/0/0`;
-		const oldPathKey = HDKey.fromCompressedPublicKey(compressedPublicKey).derive(`m/0/0`).publicKey.toString("hex");
+		const oldPathKey = await instance.ledger().getPublicKey(oldPath);
 		const oldPathAddress = await instance.identity().address().fromPublicKey(oldPathKey);
 		const oldPathBalance = (await instance.client().wallet(oldPathAddress)).balance();
 
 		const newPath = `44'/${slip44}'/0'/0/${accountIndex}`;
-		const newPathKey = HDKey.fromCompressedPublicKey(compressedPublicKey).derive(`m/0/${accountIndex}`).publicKey.toString("hex");
+		const newPathKey = HDKey.fromCompressedPublicKey(
+			await instance
+			.ledger()
+			.getExtendedPublicKey(`m/44'/${slip44}'/${accountIndex}'`)
+		).derive(`m/0/${accountIndex}`).publicKey.toString("hex");
 		const newPathAddress = await instance.identity().address().fromPublicKey(newPathKey)
 		const newPathBalance = (await instance.client().wallet(newPathAddress)).balance();
 
