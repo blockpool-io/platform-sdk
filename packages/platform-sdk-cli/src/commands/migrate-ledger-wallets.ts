@@ -66,7 +66,7 @@ export const migrateLedgerWallets = async (env: Environment, profile: Profile): 
 		const oldPathBalance = (await instance.client().wallet(oldPathAddress)).balance();
 
 		const newPath = `44'/${slip44}'/0'/0/${accountIndex}`;
-		const newPathKey = HDKey.fromCompressedPublicKey(compressedPublicKey).derive(`m/0/0`).publicKey.toString("hex");
+		const newPathKey = HDKey.fromCompressedPublicKey(compressedPublicKey).derive(`m/0/${accountIndex}`).publicKey.toString("hex");
 		const newPathAddress = await instance.identity().address().fromPublicKey(newPathKey)
 		const newPathBalance = (await instance.client().wallet(newPathAddress)).balance();
 
