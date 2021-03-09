@@ -76,10 +76,10 @@ export const migrateLedgerWallets = async (env: Environment, profile: Profile): 
 			addressList.push({
 				oldPath,
 				oldPathAddress: oldPathAddress,
-				oldPathBalance: oldPathBalance,
+				oldPathBalance: oldPathBalance.toString(),
 				newPath,
 				newPathAddress: newPathAddress,
-				newPathBalance: newPathBalance,
+				newPathBalance: newPathBalance.toString(),
 			});
 		} catch (error) {
 			continue;
