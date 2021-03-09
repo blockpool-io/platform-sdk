@@ -56,30 +56,34 @@ export const migrateLedgerWallets = async (env: Environment, profile: Profile): 
 	const table = new Table({ head: ["Old Path", "Old Address", "Old Balance", "New Path", "New Address", "New Balance"] });
 
 	for (let accountIndex = 0; accountIndex < 50; accountIndex++) {
-		// Old Wallet
-		const oldPath = `44'/${slip44}'/${accountIndex}'/0/0`;
-		const oldPathKey = await instance.ledger().getPublicKey(oldPath);
-		const oldPathAddress = await instance.identity().address().fromPublicKey(oldPathKey);
-		const oldPathBalance = (await instance.client().wallet(oldPathAddress)).balance();
+		try {
+			// Old Wallet
+			const oldPath = `44'/${slip44}'/${accountIndex}'/0/0`;
+			const oldPathKey = await instance.ledger().getPublicKey(oldPath);
+			const oldPathAddress = await instance.identity().address().fromPublicKey(oldPathKey);
+			const oldPathBalance = (await instance.client().wallet(oldPathAddress)).balance();
 
-		// New Wallet
-		const newPath = `44'/${slip44}'/0'/0/${accountIndex}`;
-		const newPathKey = HDKey.fromCompressedPublicKey(
-			await instance
-			.ledger()
-			.getExtendedPublicKey(`m/44'/${slip44}'/${accountIndex}'`)
-		).derive(`m/0/${accountIndex}`).publicKey.toString("hex");
-		const newPathAddress = await instance.identity().address().fromPublicKey(newPathKey)
-		const newPathBalance = (await instance.client().wallet(newPathAddress)).balance();
+			// New Wallet
+			const newPath = `44'/${slip44}'/0'/0/${accountIndex}`;
+			const newPathKey = HDKey.fromCompressedPublicKey(
+				await instance
+				.ledger()
+				.getExtendedPublicKey(`m/44'/${slip44}'/${accountIndex}'`)
+			).derive(`m/0/${accountIndex}`).publicKey.toString("hex");
+			const newPathAddress = await instance.identity().address().fromPublicKey(newPathKey)
+			const newPathBalance = (await instance.client().wallet(newPathAddress)).balance();
 
-		addressList.push({
-			oldPath,
-			oldPathAddress: oldPathAddress,
-			oldPathBalance: oldPathBalance,
-			newPath,
-			newPathAddress: newPathAddress,
-			newPathBalance: newPathBalance,
-		});
+			addressList.push({
+				oldPath,
+				oldPathAddress: oldPathAddress,
+				oldPathBalance: oldPathBalance,
+				newPath,
+				newPathAddress: newPathAddress,
+				newPathBalance: newPathBalance,
+			});
+		} catch (error) {
+			continue;
+		}
 	}
 
 	for (const address of addressList) {
