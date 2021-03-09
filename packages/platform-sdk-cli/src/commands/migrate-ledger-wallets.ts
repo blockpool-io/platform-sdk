@@ -82,6 +82,8 @@ export const migrateLedgerWallets = async (env: Environment, profile: Profile): 
 				newPathBalance: newPathBalance.toHuman(),
 			});
 		} catch (error) {
+			console.log(error.message);
+
 			continue;
 		}
 	}
