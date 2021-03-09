@@ -51,69 +51,97 @@ export const migrateLedgerWallets = async (env: Environment, profile: Profile): 
 		throw connectError;
 	}
 
-	const addressList: any[] = [];
+	LedgerTransportNodeHID.listen({
+		// @ts-ignore
+		next: async ({ type, deviceModel }) => {
+			if (type === "add") {
 
-	const table = new Table({ head: ["Old Path", "Old Address", "Old Balance", "New Path", "New Address", "New Balance"] });
+				const addressList: any[] = [];
 
-	for (let accountIndex = 0; accountIndex < 50; accountIndex++) {
-		try {
-			// Old Wallet
-			const oldPath = `44'/${slip44}'/${accountIndex}'/0/0`;
-			const oldPathKey = await instance.ledger().getPublicKey(`m/${oldPath}`);
-			const oldPathAddress = await instance.identity().address().fromPublicKey(oldPathKey);
-			const oldPathBalance = (await instance.client().wallet(oldPathAddress)).balance();
+				const table = new Table({ head: ["Old Path", "Old Address", "Old Balance", "New Path", "New Address", "New Balance"] });
 
-			// New Wallet
-			const newPath = `44'/${slip44}'/0'/0/${accountIndex}`;
-			const newPathKey = HDKey.fromCompressedPublicKey(
-				await instance
-					.ledger()
-					.getExtendedPublicKey(`m/44'/${slip44}'/${accountIndex}'`)
-			).derive(`m/0/${accountIndex}`).publicKey.toString("hex");
-			const newPathAddress = await instance.identity().address().fromPublicKey(newPathKey)
+				for (let accountIndex = 0; accountIndex < 50; accountIndex++) {
+					try {
+						// Old Wallet
+						const oldPath = `44'/${slip44}'/${accountIndex}'/0/0`;
+						const oldPathKey = await instance.ledger().getPublicKey(`m/${oldPath}`);
+						const oldPathAddress = await instance.identity().address().fromPublicKey(oldPathKey);
+						const oldPathBalance = (await instance.client().wallet(oldPathAddress)).balance();
+						const oldPathWallet = await profile.wallets().importByAddress(oldPathAddress, coin, network);
+						oldPathWallet.syncIdentity();
 
-			addressList.push({
-				oldPath,
-				oldPathAddress: oldPathAddress,
-				oldPathBalance: oldPathBalance.toHuman(),
-				newPath,
-				newPathAddress: newPathAddress,
-				newPathBalance: oldPathBalance.toHuman(), // @TODO: subtract fee
-			});
-		} catch (error) {
-			console.log(error.message);
+						// New Wallet
+						const newPath = `44'/${slip44}'/0'/0/${accountIndex}`;
+						const newPathKey = HDKey.fromCompressedPublicKey(
+							await instance
+								.ledger()
+								.getExtendedPublicKey(`m/44'/${slip44}'/${accountIndex}'`)
+						).derive(`m/0/${accountIndex}`).publicKey.toString("hex");
+						const newPathAddress = await instance.identity().address().fromPublicKey(newPathKey)
 
-			continue;
-		}
-	}
+						// Test Transfer
+						const input = {
+							from: oldPathAddress,
+							data: {
+								amount: `${1e8}`,
+								to: oldPathAddress,
+							},
+							sign: { senderPublicKey: oldPathKey },
+						};
+						const unsignedId = await oldPathWallet
+							.transaction()
+							.signTransfer(input, { unsignedBytes: true, unsignedJson: false });
+						const unsignedTransaction = oldPathWallet.transaction().transaction(unsignedId);
+						const bytes = Buffer.from(unsignedTransaction.toString(), "hex");
+						const signature = await oldPathWallet.coin().ledger().signTransaction(oldPath, bytes);
 
-	for (const address of addressList) {
-		table.push([
-			address.oldPath,
-			address.oldPathAddress,
-			address.oldPathBalance,
-			address.newPath,
-			address.newPathAddress,
-			address.newPathBalance,
-		]);
-	}
+						await oldPathWallet.transaction().broadcast(
+							await oldPathWallet
+								.transaction()
+								.signTransfer({
+									...input,
+									nonce: oldPathWallet.nonce().plus(1).toFixed(),
+									sign: {
+										senderPublicKey: oldPathKey,
+										signature,
+									},
+								}, { unsignedBytes: true, unsignedJson: false }),
+						);
 
-	console.log(addressList);
+						process.exit();
 
-	console.log(table.toString());
+						addressList.push({
+							oldPath,
+							oldPathAddress: oldPathAddress,
+							oldPathBalance: oldPathBalance.toHuman(),
+							newPath,
+							newPathAddress: newPathAddress,
+							newPathBalance: oldPathBalance.toHuman(), // @TODO: subtract fee
+						});
+					} catch {
+						continue;
+					}
+				}
 
-	// LedgerTransportNodeHID.listen({
-	// 	// @ts-ignore
-	// 	next: async ({ type, deviceModel }) => {
-	// 		if (type === "add") {
-	// 			//
-	// 		}
+				for (const address of addressList) {
+					table.push([
+						address.oldPath,
+						address.oldPathAddress,
+						address.oldPathBalance,
+						address.newPath,
+						address.newPathAddress,
+						address.newPathBalance,
+					]);
+				}
 
-	// 		if (type === "remove") {
-	// 			useLogger().info(`Disconnected [${deviceModel.productName}]`);
-	// 		}
-	// 	},
-	// 	error: (e) => console.log({ type: "failed", message: e.message }),
-	// 	complete: () => void 0,
-	// });
+				console.log(table.toString());
+			}
+
+			if (type === "remove") {
+				useLogger().info(`Disconnected [${deviceModel.productName}]`);
+			}
+		},
+		error: (e) => console.log({ type: "failed", message: e.message }),
+		complete: () => void 0,
+	});
 };
