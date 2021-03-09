@@ -59,7 +59,7 @@ export const migrateLedgerWallets = async (env: Environment, profile: Profile): 
 		try {
 			// Old Wallet
 			const oldPath = `44'/${slip44}'/${accountIndex}'/0/0`;
-			const oldPathKey = await instance.ledger().getPublicKey(oldPath);
+			const oldPathKey = await instance.ledger().getPublicKey(`m/${oldPath}`);
 			const oldPathAddress = await instance.identity().address().fromPublicKey(oldPathKey);
 			const oldPathBalance = (await instance.client().wallet(oldPathAddress)).balance();
 
