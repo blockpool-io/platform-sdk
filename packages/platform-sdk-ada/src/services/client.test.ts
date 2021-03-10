@@ -9,6 +9,8 @@ import { SignedTransactionData, TransactionData, WalletData } from "../dto";
 import { ClientService } from "./client";
 import { TransactionService } from "./transaction";
 
+jest.setTimeout(10000);
+
 let subject: ClientService;
 
 beforeEach(async () => (subject = await ClientService.__construct(createConfig())));
@@ -118,7 +120,7 @@ describe("ClientService", function () {
 	});
 
 	describe("#broadcast", () => {
-		it("#accepted", async () => {
+		it.only("#accepted", async () => {
 			// nock(/.*/)
 			// 	.post("/v2/proxy/transactions")
 			// 	.reply(201);

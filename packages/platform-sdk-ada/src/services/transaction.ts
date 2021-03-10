@@ -1,5 +1,5 @@
 import { Coins, Contracts, Exceptions } from "@arkecosystem/platform-sdk";
-import CardanoWasm, { Address } from "@emurgo/cardano-serialization-lib-nodejs";
+import CardanoWasm, { Address, PrivateKey } from "@emurgo/cardano-serialization-lib-nodejs";
 
 import { SignedTransactionData } from "../dto";
 import { postGraphql } from "./helpers";
@@ -56,7 +56,7 @@ export class TransactionService implements Contracts.TransactionService {
 		// Get a `Bip32PrivateKey` instance according to `CIP1852` and turn it into a `PrivateKey` instance
 		const rootKey = deriveRootKey(input.sign.mnemonic);
 		const accountKey = deriveAccountKey(rootKey, 0);
-		// const privateKey = accountKey.to_raw_key();
+		const privateKey = accountKey.to_raw_key();
 		// console.log(
 		// 	"privateKey",
 		// 	Buffer.from(privateKey.as_bytes()).toString("hex"),
@@ -70,14 +70,25 @@ export class TransactionService implements Contracts.TransactionService {
 		const i = 0;
 		const utxo: UnspentTransaction = utxos[i];
 
-		txBuilder.add_input(
-			Address.from_bech32(utxo.address),
+		txBuilder.add_key_input(
+			privateKey.to_public().hash(),
 			CardanoWasm.TransactionInput.new(
-				CardanoWasm.TransactionHash.from_bytes(Buffer.from(utxo.transaction.hash, "hex")),
-				parseInt(utxo.index),
+				CardanoWasm.TransactionHash.from_bytes(Buffer.from(utxo.transaction.hash, 'hex')),
+				parseInt(utxo.index)
 			),
-			createValue(utxo.value),
+			CardanoWasm.Value.new(
+				CardanoWasm.BigNum.from_str(utxo.value.toString())
+			),
 		);
+
+		// txBuilder.add_input(
+		// 	Address.from_bech32(utxo.address),
+		// 	CardanoWasm.TransactionInput.new(
+		// 		CardanoWasm.TransactionHash.from_bytes(Buffer.from(utxo.transaction.hash, "hex")),
+		// 		parseInt(utxo.index),
+		// 	),
+		// 	createValue(utxo.value),
+		// );
 
 		console.log("utxo", utxo);
 		// break;
