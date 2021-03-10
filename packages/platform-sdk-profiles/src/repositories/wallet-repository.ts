@@ -1,4 +1,4 @@
-import { Coins, Contracts } from "@arkecosystem/platform-sdk";
+import { Coins } from "@arkecosystem/platform-sdk";
 import { BIP39 } from "@arkecosystem/platform-sdk-crypto";
 import { sortBy, sortByDesc } from "@arkecosystem/utils";
 import retry from "p-retry";
@@ -80,12 +80,14 @@ export class WalletRepository {
 		let lastResponse: Coins.WalletDataCollection | undefined;
 		while (hasMore) {
 			if (lastResponse) {
-				lastResponse = await service.client().wallets({ addresses: addresses, cursor: lastResponse.nextPage() });
+				lastResponse = await service
+					.client()
+					.wallets({ addresses: addresses, cursor: lastResponse.nextPage() });
 			} else {
 				lastResponse = await service.client().wallets({ addresses: addresses });
 			}
 
-			for(const wallet of lastResponse.items()) {
+			for (const wallet of lastResponse.items()) {
 				const instance: ReadWriteWallet = new Wallet(uuidv4(), {}, this.#profile);
 				await instance.setCoin(coin, network);
 				await instance.setAddress(wallet.address());
