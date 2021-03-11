@@ -15,7 +15,7 @@ const network: Coins.CoinNetwork = {
 	},
 	networking: {
 		hosts: ["http://51.75.183.28:8090"],
-		hostsArchival: ["http://51.75.183.27:3100"],
+		hostsArchival: ["http://193.70.72.84:3100"],
 	},
 	governance: {
 		voting: {

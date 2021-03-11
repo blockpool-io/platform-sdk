@@ -1,21 +1,22 @@
 import { Coins, Contracts, Exceptions, Helpers } from "@arkecosystem/platform-sdk";
 import { Arr } from "@arkecosystem/platform-sdk-support";
-import { Buffer } from "buffer";
 
 import * as TransactionDTO from "../dto";
 import { TransactionData, WalletData } from "../dto";
+import { Bridge } from "./bridge";
 import { postGraphql } from "./helpers";
-import { addressFromAccountExtPublicKey } from "./identity/shelley";
 
 export class ClientService implements Contracts.ClientService {
 	readonly #config: Coins.Config;
 	readonly #http: Contracts.HttpClient;
 	readonly #peer: string;
+	readonly #bridge: Bridge;
 
 	private constructor({ config, http, peer }) {
 		this.#config = config;
 		this.#http = http;
 		this.#peer = peer;
+		this.#bridge = new Bridge(config);
 	}
 
 	public static async __construct(config: Coins.Config): Promise<ClientService> {
@@ -78,9 +79,9 @@ export class ClientService implements Contracts.ClientService {
 			throw new Exceptions.MissingArgument(this.constructor.name, "transaction", "walletId");
 		}
 
-		const { usedSpendAddresses, usedChangeAddresses } = await this.usedAddressesForAccount(query?.walletId);
+		const { usedSpendAddresses, usedChangeAddresses } = await this.#bridge.usedAddressesForAccount(query?.walletId);
 
-		const transactions = (await this.fetchTransactions(
+		const transactions = (await this.#bridge.fetchTransactions(
 			Array.from(usedSpendAddresses.values()).concat(Array.from(usedChangeAddresses.values())),
 		)) as any;
 
@@ -96,9 +97,9 @@ export class ClientService implements Contracts.ClientService {
 	}
 
 	public async wallet(id: string): Promise<Contracts.WalletData> {
-		const { usedSpendAddresses, usedChangeAddresses } = await this.usedAddressesForAccount(id);
+		const { usedSpendAddresses, usedChangeAddresses } = await this.#bridge.usedAddressesForAccount(id);
 
-		const balance = await this.fetchUtxosAggregate(
+		const balance = await this.#bridge.fetchUtxosAggregate(
 			Array.from(usedSpendAddresses.values()).concat(Array.from(usedChangeAddresses.values())),
 		);
 
@@ -139,14 +140,12 @@ export class ClientService implements Contracts.ClientService {
 			errors: {},
 		};
 
-		console.log(transactions)
-
 		for (const transaction of transactions) {
 			try {
-				console.log(`mutation { submitTransaction(transaction: "${transaction.toBroadcast()}") { hash } }`)
+				// console.log(`mutation { submitTransaction(transaction: "${transaction.toBroadcast()}") { hash } }`)
 				const broadcast = await postGraphql(this.#config, `mutation { submitTransaction(transaction: "${transaction.toBroadcast()}") { hash } }`);
 
-				console.log(broadcast);
+				console.log("BROADCASTED", broadcast);
 
 				result.accepted.push(transaction.id());
 			} catch (error) {
@@ -164,153 +163,6 @@ export class ClientService implements Contracts.ClientService {
 		hosts: string[],
 	): Promise<Contracts.BroadcastResponse> {
 		throw new Exceptions.NotImplemented(this.constructor.name, "broadcastSpread");
-	}
-
-	private async usedAddressesForAccount(accountPublicKey: string) {
-		const usedSpendAddresses: Set<string> = new Set<string>();
-		const usedChangeAddresses: Set<string> = new Set<string>();
-
-		let offset = 0;
-		let exhausted = false;
-		do {
-			const spendAddresses: string[] = await this.addressesChunk(accountPublicKey, false, offset);
-			const changeAddresses: string[] = await this.addressesChunk(accountPublicKey, true, offset);
-
-			const allAddresses = spendAddresses.concat(changeAddresses);
-			const usedAddresses: string[] = await this.fetchUsedAddressesData(allAddresses);
-
-			spendAddresses
-				.filter((sa) => usedAddresses.find((ua) => ua === sa) !== undefined)
-				.forEach((sa) => usedSpendAddresses.add(sa));
-			changeAddresses
-				.filter((sa) => usedAddresses.find((ua) => ua === sa) !== undefined)
-				.forEach((sa) => usedChangeAddresses.add(sa));
-
-			exhausted = usedAddresses.length === 0;
-			offset += 20;
-		} while (!exhausted);
-		return { usedSpendAddresses, usedChangeAddresses };
-	}
-
-	private async addressesChunk(accountPublicKey: string, isChange: boolean, offset: number): Promise<string[]> {
-		const publicKey = Buffer.from(accountPublicKey, "hex");
-		const networkId = this.#config.get<string>(Coins.ConfigKey.CryptoNetworkId);
-
-		const addresses: string[] = [];
-		for (let i = offset; i < offset + 20; ++i) {
-			addresses.push(addressFromAccountExtPublicKey(publicKey, isChange, i, networkId));
-		}
-		return addresses;
-	}
-
-	private async fetchUsedAddressesData(addresses: string[]): Promise<string[]> {
-		const query = `
-			{
-				transactions(
-					where: {
-						_or: [
-							{
-								inputs: {
-									address: {
-										_in: [
-											${addresses.map((a) => '"' + a + '"').join("\n")}
-										]
-									}
-								}
-							}
-							{
-							outputs: {
-								address: {
-										_in: [
-											${addresses.map((a) => '"' + a + '"').join("\n")}
-										]
-									}
-								}
-							}
-						]
-					}
-				) {
-					inputs {
-						address
-					}
-					outputs {
-						address
-					}
-				}
-			}`;
-		return ((await postGraphql(this.#config, query)) as any).transactions
-			.flatMap((tx) => tx.inputs.map((i) => i.address).concat(tx.outputs.map((o) => o.address)))
-			.sort();
-	}
-
-	private async fetchUtxosAggregate(addresses: string[]): Promise<string> {
-		const query = `
-			{
-				utxos_aggregate(
-					where: {
-						address: {
-							_in: [
-								${addresses.map((a) => '"' + a + '"').join("\n")}
-							]
-						}
-					}
-				) {
-					aggregate {
-						sum {
-							value
-						}
-					}
-				}
-			}`;
-		return ((await postGraphql(this.#config, query)) as any).utxos_aggregate.aggregate.sum.value;
-	}
-
-	private async fetchTransactions(addresses: string[]): Promise<object[]> {
-		const query = `
-			{
-				transactions(
-					where: {
-						_or: [
-							{
-								inputs: {
-									address: {
-										_in: [
-											${addresses.map((a) => '"' + a + '"').join("\n")}
-										]
-									}
-								}
-							}
-							{
-							outputs: {
-								address: {
-										_in: [
-											${addresses.map((a) => '"' + a + '"').join("\n")}
-										]
-									}
-								}
-							}
-						]
-					}
-					) {
-						hash
-						includedAt
-						inputs {
-							sourceTransaction {
-       					hash
-      				}
-						  value
-							address
-						}
-						outputs {
-						  index
-						  value
-							address
-						}
-					}
-				}
-			}`;
-
-		return ((await postGraphql(this.#config, query)) as any).transactions;
 	}
 
 	private async post(path: string, body: object): Promise<Contracts.KeyValuePair> {

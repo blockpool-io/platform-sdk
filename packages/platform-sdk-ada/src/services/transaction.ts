@@ -2,6 +2,7 @@ import { Coins, Contracts, Exceptions } from "@arkecosystem/platform-sdk";
 import CardanoWasm, { Address, PrivateKey } from "@emurgo/cardano-serialization-lib-nodejs";
 
 import { SignedTransactionData } from "../dto";
+import { Bridge } from "./bridge";
 import { postGraphql } from "./helpers";
 import { deriveAccountKey, deriveChangeKey, deriveRootKey, deriveSpendKey } from "./identity/shelley";
 import { createValue } from "./transaction.helpers";
@@ -17,9 +18,11 @@ export interface UnspentTransaction {
 
 export class TransactionService implements Contracts.TransactionService {
 	readonly #config: Coins.Config;
+	readonly #bridge: Bridge;
 
 	public constructor(config: Coins.Config) {
 		this.#config = config;
+		this.#bridge = new Bridge(config);
 	}
 
 	public static async __construct(config: Coins.Config): Promise<TransactionService> {
@@ -53,46 +56,29 @@ export class TransactionService implements Contracts.TransactionService {
 			CardanoWasm.BigNum.from_str(keyDeposit.toString()),
 		);
 
+		const { usedSpendAddresses, usedChangeAddresses } = await this.#bridge.usedAddressesForAccount(input.from);
+		const usedAddresses = Array.from(usedSpendAddresses.values()).concat(Array.from(usedChangeAddresses.values()));
+
 		// Get a `Bip32PrivateKey` instance according to `CIP1852` and turn it into a `PrivateKey` instance
 		const rootKey = deriveRootKey(input.sign.mnemonic);
 		const accountKey = deriveAccountKey(rootKey, 0);
 		const privateKey = accountKey.to_raw_key();
-		// console.log(
-		// 	"privateKey",
-		// 	Buffer.from(privateKey.as_bytes()).toString("hex"),
-		// 	"publicKey",
-		// 	Buffer.from(privateKey.to_public().as_bytes()).toString("hex"),
-		// );
-		// These are the inputs (UTXO) that will be consumed to satisfy the outputs. Any change will be transferred back to the sender
-		const utxos: UnspentTransaction[] = await this.listUnspentTransactions(input.from);
 
-		// for (let i = 0; i < utxos.length; i++) {
+		// These are the inputs (UTXO) that will be consumed to satisfy the outputs. Any change will be transferred back to the sender
+		const utxos: UnspentTransaction[] = await this.listUnspentTransactions(usedAddresses);
+
 		const i = 0;
 		const utxo: UnspentTransaction = utxos[i];
+		const utxoAddressIndex = 1; // The UTXO it finds is at index 1, will do filtering logic later.
 
-		txBuilder.add_key_input(
-			privateKey.to_public().hash(),
+		txBuilder.add_input(
+			Address.from_bech32(utxo.address),
 			CardanoWasm.TransactionInput.new(
-				CardanoWasm.TransactionHash.from_bytes(Buffer.from(utxo.transaction.hash, 'hex')),
-				parseInt(utxo.index)
+				CardanoWasm.TransactionHash.from_bytes(Buffer.from(utxo.transaction.hash, "hex")),
+				parseInt(utxo.index),
 			),
-			CardanoWasm.Value.new(
-				CardanoWasm.BigNum.from_str(utxo.value.toString())
-			),
+			createValue(utxo.value),
 		);
-
-		// txBuilder.add_input(
-		// 	Address.from_bech32(utxo.address),
-		// 	CardanoWasm.TransactionInput.new(
-		// 		CardanoWasm.TransactionHash.from_bytes(Buffer.from(utxo.transaction.hash, "hex")),
-		// 		parseInt(utxo.index),
-		// 	),
-		// 	createValue(utxo.value),
-		// );
-
-		console.log("utxo", utxo);
-		// break;
-		// }
 
 		// These are the outputs that will be transferred to other wallets. For now we only support a single output.
 		txBuilder.add_output(
@@ -105,12 +91,10 @@ export class TransactionService implements Contracts.TransactionService {
 		// This is the expiration slot which should be estimated with #estimateExpiration
 		if (input.data.expiration === undefined) {
 			txBuilder.set_ttl(parseInt(await this.estimateExpiration()));
-		} else {
-			txBuilder.set_ttl(input.data.expiration);
 		}
 
 		// calculate the min fee required and send any change to an address
-		txBuilder.add_change_if_needed(CardanoWasm.Address.from_bech32(input.from));
+		txBuilder.add_change_if_needed(CardanoWasm.Address.from_bech32(input.data.to)); // dummy, this should go back to the sender wallet
 
 		// once the transaction is ready, we build it to get the tx body without witnesses
 		const txBody = txBuilder.build();
@@ -119,25 +103,11 @@ export class TransactionService implements Contracts.TransactionService {
 
 		// add keyhash witnesses
 		const vkeyWitnesses = CardanoWasm.Vkeywitnesses.new();
-		vkeyWitnesses.add(
-			CardanoWasm.make_vkey_witness(
-				CardanoWasm.TransactionHash.from_bytes(Buffer.from(utxo.transaction.hash, "hex")),
-				deriveSpendKey(accountKey, 0).to_raw_key(),
-			),
-		);
-		vkeyWitnesses.add(
-			CardanoWasm.make_vkey_witness(
-				CardanoWasm.TransactionHash.from_bytes(Buffer.from(utxo.transaction.hash, "hex")),
-				deriveChangeKey(accountKey, 0).to_raw_key(),
-			),
-		);
-		// vkeyWitnesses.add(CardanoWasm.make_vkey_witness(txHash, deriveStakeKey(accountKey, 0).to_raw_key()));
-		// vkeyWitnesses.add(CardanoWasm.make_vkey_witness(txHash, deriveChangeKey(accountKey, 0).to_raw_key()));
-		vkeyWitnesses.add(CardanoWasm.make_vkey_witness(txHash, accountKey.to_raw_key()));
+		vkeyWitnesses.add(CardanoWasm.make_vkey_witness(txHash, accountKey.derive(0).derive(1).to_raw_key()));
+		// vkeyWitnesses.add(CardanoWasm.make_vkey_witness(txHash, accountKey.to_raw_key()));
 		witnesses.set_vkeys(vkeyWitnesses);
 
-		console.log("hash", Buffer.from(txHash.to_bytes()).toString("hex"));
-		return new SignedTransactionData(
+        return new SignedTransactionData(
 			Buffer.from(txHash.to_bytes()).toString("hex"),
 			{
 				sender: input.from,
@@ -235,7 +205,7 @@ export class TransactionService implements Contracts.TransactionService {
 		return (tip + ttl).toString();
 	}
 
-	private async listUnspentTransactions(address: string): Promise<UnspentTransaction[]> {
+	private async listUnspentTransactions(addresses: string[]): Promise<UnspentTransaction[]> {
 		return (
 			await postGraphql(
 				this.#config,
@@ -244,7 +214,9 @@ export class TransactionService implements Contracts.TransactionService {
 				  order_by: { value: desc }
 				  where: {
 					address: {
-					  _eq: "${address}"
+						_in: [
+							${addresses.map((a) => '"' + a + '"').join("\n")}
+						]
 					}
 				  }
 				) {

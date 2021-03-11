@@ -8,6 +8,7 @@ export const postGraphql = async (config: Coins.Config, query: string): Promise<
 	const json = keyValuePair.json();
 
 	if (json.errors) {
+		console.log(JSON.stringify(json.errors, null, 4));
 		throw Error(json.errors);
 	}
 
